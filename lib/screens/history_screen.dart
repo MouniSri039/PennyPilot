@@ -16,17 +16,24 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   int? filterCategory;
-  DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
-  String searchQuery = '';
 
-  // Transaction list filter: all, income, or expense.
+  DateTime month = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+  );
+
+  String searchQuery = '';
   String transactionTypeFilter = 'all';
+
+  // Supported sorting options:
+  // newest, oldest, highest, lowest.
+  String transactionSort = 'newest';
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<FinanceState>();
 
-    // Monthly and category filters control financial insights.
+    // Month and category control the financial insights.
     final filtered = state.transactions
         .where(
           (t) =>
@@ -36,11 +43,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
         )
         .toList();
 
-    // Search and transaction type only narrow the displayed list.
-    // They do not change the monthly summary or expense chart.
+    // Search and type filters only affect the displayed transactions.
     final query = searchQuery.trim().toLowerCase();
 
-    final searchedTransactions = filtered.where((t) {
+    final displayedTransactions = filtered.where((t) {
       final matchesType =
           transactionTypeFilter == 'all' || t.type == transactionTypeFilter;
 
@@ -53,6 +59,50 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
       return description.contains(query) || category.contains(query);
     }).toList();
+
+    // Sort the displayed list without changing the source transactions.
+    switch (transactionSort) {
+      case 'oldest':
+        displayedTransactions.sort((a, b) {
+          final dateComparison = a.date.compareTo(b.date);
+
+          if (dateComparison != 0) return dateComparison;
+
+          return (a.id ?? 0).compareTo(b.id ?? 0);
+        });
+        break;
+
+      case 'highest':
+        displayedTransactions.sort((a, b) {
+          final amountComparison = b.amount.compareTo(a.amount);
+
+          if (amountComparison != 0) return amountComparison;
+
+          return b.date.compareTo(a.date);
+        });
+        break;
+
+      case 'lowest':
+        displayedTransactions.sort((a, b) {
+          final amountComparison = a.amount.compareTo(b.amount);
+
+          if (amountComparison != 0) return amountComparison;
+
+          return b.date.compareTo(a.date);
+        });
+        break;
+
+      case 'newest':
+      default:
+        displayedTransactions.sort((a, b) {
+          final dateComparison = b.date.compareTo(a.date);
+
+          if (dateComparison != 0) return dateComparison;
+
+          return (b.id ?? 0).compareTo(a.id ?? 0);
+        });
+        break;
+    }
 
     final spent = filtered
         .where((t) => t.type == 'expense')
@@ -78,7 +128,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Category filter.
+          // Category selection.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -136,7 +186,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ],
           ),
 
-          // Monthly summary.
+          // Financial summary remains independent of search and sorting.
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -264,7 +314,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
           const SizedBox(height: 12),
 
-          // Filter the displayed transactions by type.
+          // Filter by transaction type.
           SegmentedButton<String>(
             key: const Key('transaction-type-filter'),
             segments: const [
@@ -294,18 +344,55 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
           const SizedBox(height: 12),
 
-          // Show the matching count when search or type filtering is active.
+          // Transaction sorting dropdown.
+          DropdownButtonFormField<String>(
+            key: const Key('transaction-sort'),
+            initialValue: transactionSort,
+            decoration: const InputDecoration(
+              labelText: 'Sort Transactions',
+              prefixIcon: Icon(Icons.sort),
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'newest',
+                child: Text('Newest first'),
+              ),
+              DropdownMenuItem(
+                value: 'oldest',
+                child: Text('Oldest first'),
+              ),
+              DropdownMenuItem(
+                value: 'highest',
+                child: Text('Highest amount first'),
+              ),
+              DropdownMenuItem(
+                value: 'lowest',
+                child: Text('Lowest amount first'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+
+              setState(() {
+                transactionSort = value;
+              });
+            },
+          ),
+
+          const SizedBox(height: 12),
+
           if (query.isNotEmpty || transactionTypeFilter != 'all')
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                '${searchedTransactions.length} matching transaction(s)',
+                '${displayedTransactions.length} matching transaction(s)',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
 
           // Empty state.
-          if (searchedTransactions.isEmpty)
+          if (displayedTransactions.isEmpty)
             Card(
               child: ListTile(
                 leading: const Icon(Icons.search_off),
@@ -322,8 +409,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
 
-          // Matching transactions.
-          for (final MoneyTransaction t in searchedTransactions)
+          // Sorted transaction list.
+          for (final MoneyTransaction t in displayedTransactions)
             Card(
               child: ListTile(
                 title: Text(
