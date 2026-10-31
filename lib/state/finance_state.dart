@@ -32,6 +32,7 @@ class FinanceState extends ChangeNotifier {
 
   double monthlyBudget = 500;
   bool remindersEnabled = false;
+  bool darkModeEnabled = false;
   bool loading = true;
   String? error;
 
@@ -41,6 +42,7 @@ class FinanceState extends ChangeNotifier {
 
       monthlyBudget = prefs.getDouble('monthly_budget') ?? 500;
       remindersEnabled = prefs.getBool('reminders_enabled') ?? false;
+      darkModeEnabled = prefs.getBool('dark_mode_enabled') ?? false;
 
       await reload();
     } catch (e) {
@@ -185,6 +187,15 @@ class FinanceState extends ChangeNotifier {
 
     await (await SharedPreferences.getInstance())
         .setBool('reminders_enabled', value);
+  }
+
+  Future<void> setDarkMode(bool value) async {
+    darkModeEnabled = value;
+
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('dark_mode_enabled', value);
   }
 
   double get spent => SpendingHelper.expenses(

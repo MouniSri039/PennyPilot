@@ -109,6 +109,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: money(state.monthlyBudget),
             onChanged: (value) => state.setBudget(value),
           ),
+          const Divider(),
+          const Text(
+            'Appearance',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SwitchListTile(
+            key: const Key('dark-mode-toggle'),
+            secondary: const Icon(Icons.dark_mode_outlined),
+            title: const Text('Dark Mode'),
+            subtitle: const Text(
+              'Use a darker appearance throughout PennyPilot',
+            ),
+            value: state.darkModeEnabled,
+            onChanged: state.setDarkMode,
+          ),
           const SizedBox(height: 10),
           ListTile(
             leading: const Icon(Icons.category_outlined),
