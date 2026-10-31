@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/transaction_validation.dart';
 import 'package:provider/provider.dart';
 import '../models/finance_models.dart';
 import '../state/finance_state.dart';
@@ -79,6 +80,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   }
 
   Future<void> save() async {
+    if (saving) return;
     if (!formKey.currentState!.validate()) return;
     final state = context.read<FinanceState>();
     final available = state.categories.where((c) => c.kind == type).toList();
@@ -178,12 +180,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
               ),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              validator: (v) {
-                final n = double.tryParse(v?.trim() ?? '');
-                return n == null || !n.isFinite || n <= 0
-                    ? 'Enter an amount greater than zero'
-                    : null;
-              },
+              validator: TransactionValidation.validateAmount,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
@@ -220,8 +217,12 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             ),
             TextFormField(
               controller: description,
-              decoration:
-                  const InputDecoration(labelText: 'Description / Notes'),
+              decoration: const InputDecoration(
+                labelText: 'Description / Notes',
+                helperText: 'Required · Maximum 120 characters',
+              ),
+              maxLength: TransactionValidation.maxDescriptionLength,
+              validator: TransactionValidation.validateDescription,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
