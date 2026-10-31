@@ -9,16 +9,24 @@ import '../widgets/common.dart';
 class ChallengeScreen extends StatelessWidget {
   const ChallengeScreen({super.key});
 
-  Future<void> create(BuildContext context) async {
-    final titleController =
-        TextEditingController(text: '7-day savings challenge');
-    final targetController = TextEditingController(text: '50');
+  Future<void> _showChallengeForm(
+    BuildContext context, {
+    SavingsChallenge? existing,
+  }) async {
+    final titleController = TextEditingController(
+      text: existing?.title ?? '7-day savings challenge',
+    );
+    final targetController = TextEditingController(
+      text: existing?.target.toString() ?? '50',
+    );
     final formKey = GlobalKey<FormState>();
 
     final result = await showDialog<SavingsChallenge>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Start a savings challenge'),
+        title: Text(
+          existing == null ? 'Start a savings challenge' : 'Edit challenge',
+        ),
         content: Form(
           key: formKey,
           child: Column(
@@ -30,23 +38,13 @@ class ChallengeScreen extends StatelessWidget {
                 maxLength: 50,
                 decoration: const InputDecoration(
                   labelText: 'Challenge name',
-                  hintText: 'e.g. Vacation savings',
                   prefixIcon: Icon(Icons.flag_outlined),
                 ),
                 validator: (value) {
                   final title = value?.trim() ?? '';
 
-                  if (title.isEmpty) {
-                    return 'Enter a challenge name';
-                  }
-
-                  if (title.length < 3) {
-                    return 'Name must contain at least 3 characters';
-                  }
-
-                  if (title.length > 50) {
-                    return 'Name cannot exceed 50 characters';
-                  }
+                  if (title.isEmpty) return 'Enter a challenge name';
+                  if (title.length < 3) return 'Use at least 3 characters';
 
                   return null;
                 },
@@ -58,22 +56,13 @@ class ChallengeScreen extends StatelessWidget {
                     const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Target amount',
-                  hintText: 'Enter your savings goal',
                   prefixIcon: Icon(Icons.attach_money),
                 ),
                 validator: (value) {
                   final amount = double.tryParse(value?.trim() ?? '');
 
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Enter a target amount';
-                  }
-
-                  if (amount == null || !amount.isFinite) {
-                    return 'Enter a valid number';
-                  }
-
-                  if (amount <= 0) {
-                    return 'Target must be greater than zero';
+                  if (amount == null || !amount.isFinite || amount <= 0) {
+                    return 'Enter a valid positive amount';
                   }
 
                   return null;
@@ -91,15 +80,21 @@ class ChallengeScreen extends StatelessWidget {
             onPressed: () {
               if (!formKey.currentState!.validate()) return;
 
+              final target = double.parse(targetController.text.trim());
+              final saved = existing?.saved ?? 0;
+
               Navigator.pop(
                 ctx,
                 SavingsChallenge(
+                  id: existing?.id,
                   title: titleController.text.trim(),
-                  target: double.parse(targetController.text.trim()),
+                  target: target,
+                  saved: saved,
+                  status: saved >= target ? 'finished' : 'active',
                 ),
               );
             },
-            child: const Text('Start Challenge'),
+            child: Text(existing == null ? 'Start' : 'Save changes'),
           ),
         ],
       ),
@@ -112,6 +107,18 @@ class ChallengeScreen extends StatelessWidget {
 
     try {
       await context.read<FinanceState>().saveChallenge(result);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              existing == null
+                  ? 'Savings challenge created.'
+                  : 'Savings challenge updated.',
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (context.mounted) showError(context, e);
     }
@@ -135,24 +142,12 @@ class ChallengeScreen extends StatelessWidget {
             autofocus: true,
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount saved',
-              hintText: 'Enter contribution amount',
-              prefixIcon: Icon(Icons.savings_outlined),
-            ),
+            decoration: const InputDecoration(labelText: 'Amount saved'),
             validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Enter a contribution amount';
-              }
+              final amount = double.tryParse(value?.trim() ?? '');
 
-              final amount = double.tryParse(value.trim());
-
-              if (amount == null || !amount.isFinite) {
-                return 'Enter a valid number';
-              }
-
-              if (amount <= 0) {
-                return 'Contribution must be greater than zero';
+              if (amount == null || !amount.isFinite || amount <= 0) {
+                return 'Enter a valid positive amount';
               }
 
               return null;
@@ -167,13 +162,12 @@ class ChallengeScreen extends StatelessWidget {
           FilledButton(
             onPressed: () {
               if (!formKey.currentState!.validate()) return;
-
               Navigator.pop(
                 ctx,
                 double.parse(amountController.text.trim()),
               );
             },
-            child: const Text('Add Contribution'),
+            child: const Text('Add'),
           ),
         ],
       ),
@@ -190,16 +184,18 @@ class ChallengeScreen extends StatelessWidget {
       return;
     }
 
-    final updatedChallenge = SavingsChallenge(
-      id: challenge.id,
-      title: challenge.title,
-      target: challenge.target,
-      saved: updatedSaved,
-      status: updatedSaved >= challenge.target ? 'finished' : 'active',
-    );
-
     try {
-      await context.read<FinanceState>().saveChallenge(updatedChallenge);
+      await context.read<FinanceState>().saveChallenge(
+            SavingsChallenge(
+              id: challenge.id,
+              title: challenge.title,
+              target: challenge.target,
+              saved: updatedSaved,
+              status: updatedSaved >= challenge.target
+                  ? 'finished'
+                  : 'active',
+            ),
+          );
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -207,7 +203,7 @@ class ChallengeScreen extends StatelessWidget {
             content: Text(
               updatedSaved >= challenge.target
                   ? 'Congratulations! You completed ${challenge.title}!'
-                  : 'Savings progress updated successfully.',
+                  : 'Savings progress updated.',
             ),
           ),
         );
@@ -256,7 +252,6 @@ class ChallengeScreen extends StatelessWidget {
     SavingsChallenge challenge,
   ) async {
     if (!await confirmDelete(context, challenge.title)) return;
-
     if (!context.mounted) return;
 
     try {
@@ -271,11 +266,9 @@ class ChallengeScreen extends StatelessWidget {
     final state = context.watch<FinanceState>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Savings Challenges'),
-      ),
+      appBar: AppBar(title: const Text('Savings Challenges')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => create(context),
+        onPressed: () => _showChallengeForm(context),
         icon: const Icon(Icons.add),
         label: const Text('Start Challenge'),
       ),
@@ -292,9 +285,7 @@ class ChallengeScreen extends StatelessWidget {
               child: ListTile(
                 leading: Icon(Icons.savings_outlined),
                 title: Text('No challenges yet'),
-                subtitle: Text(
-                  'Start your first savings challenge to track your goals.',
-                ),
+                subtitle: Text('Start your first savings challenge.'),
               ),
             ),
           for (final challenge in state.challenges)
@@ -328,6 +319,13 @@ class ChallengeScreen extends StatelessWidget {
                     Wrap(
                       spacing: 8,
                       children: [
+                        TextButton(
+                          onPressed: () => _showChallengeForm(
+                            context,
+                            existing: challenge,
+                          ),
+                          child: const Text('Edit'),
+                        ),
                         TextButton(
                           onPressed: challenge.status == 'finished'
                               ? null
