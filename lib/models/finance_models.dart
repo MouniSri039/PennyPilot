@@ -103,6 +103,41 @@ class SavingsChallenge {
       };
 }
 
+/// A single contribution made toward a savings challenge.
+///
+/// Each entry is stored separately so the user can review how their
+/// challenge balance accumulated over time.
+class ChallengeProgressEntry {
+  final int? id;
+  final int challengeId;
+  final double amount;
+  final DateTime recordedAt;
+
+  const ChallengeProgressEntry({
+    this.id,
+    required this.challengeId,
+    required this.amount,
+    required this.recordedAt,
+  });
+
+  factory ChallengeProgressEntry.fromMap(Map<String, Object?> map) {
+    return ChallengeProgressEntry(
+      id: map['id'] as int?,
+      challengeId: map['challenge_id'] as int,
+      amount: (map['amount'] as num).toDouble(),
+      recordedAt: DateTime.parse(map['recorded_at'] as String),
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'challenge_id': challengeId,
+      'amount': amount,
+      'recorded_at': recordedAt.toIso8601String(),
+    };
+  }
+}
+
 /// A historical prediction saved on a particular day.
 ///
 /// [forecastMonth] identifies the month being predicted.
