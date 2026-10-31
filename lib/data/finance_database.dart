@@ -1,3 +1,4 @@
+
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -93,6 +94,25 @@ class FinanceDatabase {
     ''');
   }
 
+  Future<void> _createChallengeProgressTable(
+    DatabaseExecutor db,
+  ) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS challenge_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        challenge_id INTEGER NOT NULL
+          REFERENCES challenges(id) ON DELETE CASCADE,
+        amount REAL NOT NULL CHECK(amount > 0),
+        recorded_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_challenge_progress_history
+      ON challenge_progress(challenge_id, recorded_at DESC, id DESC)
+    ''');
+  }
+
   Future<Database> get database async {
     if (_db != null) return _db!;
 
@@ -101,7 +121,7 @@ class FinanceDatabase {
 
     _db = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -142,6 +162,7 @@ class FinanceDatabase {
           )
         ''');
 
+        await _createChallengeProgressTable(db);
         await _createForecastSnapshotsTable(db);
         await _seed(db);
       },
@@ -203,6 +224,10 @@ class FinanceDatabase {
         if (oldVersion < 3) {
           await _createForecastSnapshotsTable(db);
         }
+
+        if (oldVersion < 4) {
+          await _createChallengeProgressTable(db);
+        }
       },
     );
 
@@ -243,6 +268,38 @@ class FinanceDatabase {
     );
 
     return rows.map(SavingsChallenge.fromMap).toList();
+  }
+
+  /// Records one positive contribution for an existing savings challenge.
+  ///
+  /// Returns the database ID assigned to the new history entry.
+  Future<int> addChallengeProgress(
+    ChallengeProgressEntry entry,
+  ) async {
+    if (!entry.amount.isFinite || entry.amount <= 0) {
+      throw ArgumentError.value(
+        entry.amount,
+        'amount',
+        'Contribution amount must be a positive finite number.',
+      );
+    }
+
+    final db = await database;
+    return db.insert('challenge_progress', entry.toMap());
+  }
+
+  /// Returns a challenge's contributions from newest to oldest.
+  Future<List<ChallengeProgressEntry>> challengeProgressFor(
+    int challengeId,
+  ) async {
+    final rows = await (await database).query(
+      'challenge_progress',
+      where: 'challenge_id = ?',
+      whereArgs: [challengeId],
+      orderBy: 'recorded_at DESC, id DESC',
+    );
+
+    return rows.map(ChallengeProgressEntry.fromMap).toList();
   }
 
   Future<void> saveForecastSnapshot(ForecastSnapshot snapshot) async {
@@ -394,6 +451,7 @@ class FinanceDatabase {
       await txn.delete('forecast_snapshots');
       await txn.delete('transactions');
       await txn.delete('categories');
+      await txn.delete('challenge_progress');
       await txn.delete('challenges');
 
       await _seed(txn);

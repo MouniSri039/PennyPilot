@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/finance_models.dart';
+import '../services/challenge_csv_export_service.dart';
 import '../state/finance_state.dart';
 import '../widgets/common.dart';
 
@@ -286,6 +287,27 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
     }
   }
 
+  Future<void> _exportChallenges(
+    BuildContext context,
+    List<SavingsChallenge> challenges,
+  ) async {
+    try {
+      final file = await ChallengeCsvExportService.export(challenges);
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('CSV exported: ${file.path}'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        showError(context, 'Could not export challenges: $e');
+      }
+    }
+  }
+
   double _progress(SavingsChallenge challenge) {
     if (challenge.target <= 0) return 0;
 
@@ -356,6 +378,15 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Savings Challenges'),
+        actions: [
+          IconButton(
+            tooltip: 'Export challenges as CSV',
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: state.challenges.isEmpty
+                ? null
+                : () => _exportChallenges(context, state.challenges),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showChallengeForm(context),
