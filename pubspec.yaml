@@ -1,4 +1,3 @@
-
 name: pennypilot
 description: Offline-first student budgeting and savings companion.
 publish_to: none
@@ -24,6 +23,8 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
   sqflite_common_ffi: ^2.3.4+4
+  integration_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true
