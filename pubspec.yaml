@@ -16,9 +16,13 @@ dependencies:
   shared_preferences: ^2.3.2
   intl: ^0.19.0
   fl_chart: ^0.69.0
+<<<<<<< HEAD
   path_provider: ^2.1.6
   share_plus: ^13.3.1
 
+=======
+  share_plus: ^13.3.1
+>>>>>>> origin/main
 dev_dependencies:
   flutter_test:
     sdk: flutter
