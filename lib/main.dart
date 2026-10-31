@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -49,11 +50,13 @@ class PennyPilotApp extends StatelessWidget {
           backgroundColor: Color(0xFF121A1A),
         ),
         cardTheme: const CardThemeData(
-          color: const Color(0xFF1D2929),
+          color: Color(0xFF1D2929),
           elevation: 2,
         ),
       ),
-      themeMode: state.darkModeEnabled ? ThemeMode.dark : ThemeMode.light,
+      themeMode: state.darkModeEnabled
+          ? ThemeMode.dark
+          : ThemeMode.light,
       home: const HomeShell(),
     );
   }
