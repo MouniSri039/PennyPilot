@@ -19,6 +19,20 @@ void main() {
     );
   }
 
+  MoneyTransaction income({
+    required int categoryId,
+    required double amount,
+    required DateTime date,
+  }) {
+    return MoneyTransaction(
+      categoryId: categoryId,
+      type: 'income',
+      amount: amount,
+      date: date,
+      description: 'Test income',
+    );
+  }
+
   group('Monthly spending forecast', () {
     test('projects month-end expenses from average daily spending', () {
       final transactions = [
@@ -68,6 +82,29 @@ void main() {
           categoryId: 1,
           amount: 500,
           date: DateTime(2026, 10, 20),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 10, 15),
+      );
+
+      expect(result.forecast.spentSoFar, 50);
+    });
+
+    test('excludes income from the monthly spending forecast', () {
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 50,
+          date: DateTime(2026, 10, 10),
+        ),
+        income(
+          categoryId: 2,
+          amount: 1000,
+          date: DateTime(2026, 10, 11),
         ),
       ];
 
@@ -144,6 +181,77 @@ void main() {
 
       expect(result.anomalies, isEmpty);
     });
+
+    test('ignores future transactions during anomaly detection', () {
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 10,
+          date: DateTime(2026, 10, 1),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 12,
+          date: DateTime(2026, 10, 2),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 11,
+          date: DateTime(2026, 10, 3),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 13,
+          date: DateTime(2026, 10, 4),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 500,
+          date: DateTime(2026, 10, 20),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 10, 15),
+      );
+
+      expect(result.anomalies, isEmpty);
+    });
+
+    test('does not use income as anomaly history', () {
+      final transactions = [
+        income(
+          categoryId: 1,
+          amount: 1000,
+          date: DateTime(2026, 10, 1),
+        ),
+        income(
+          categoryId: 1,
+          amount: 1200,
+          date: DateTime(2026, 10, 2),
+        ),
+        income(
+          categoryId: 1,
+          amount: 1100,
+          date: DateTime(2026, 10, 3),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 100,
+          date: DateTime(2026, 10, 4),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 10, 15),
+      );
+
+      expect(result.anomalies, isEmpty);
+    });
   });
 
   group('Category spending trends', () {
@@ -172,6 +280,64 @@ void main() {
       expect(trend.categoryId, 1);
       expect(trend.currentMonthTotal, 150);
       expect(trend.previousMonthTotal, 100);
+      expect(trend.percentageChange, 50);
+    });
+
+    test('ignores future transactions in category trends', () {
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 100,
+          date: DateTime(2026, 9, 10),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 150,
+          date: DateTime(2026, 10, 10),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 500,
+          date: DateTime(2026, 10, 20),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 10, 15),
+      );
+
+      final trend = result.trends.single;
+
+      expect(trend.currentMonthTotal, 150);
+      expect(trend.previousMonthTotal, 100);
+    });
+
+    test('handles year boundaries when comparing monthly trends', () {
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 80,
+          date: DateTime(2025, 12, 10),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 120,
+          date: DateTime(2026, 1, 10),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 1, 20),
+      );
+
+      final trend = result.trends.single;
+
+      expect(trend.currentMonthTotal, 120);
+      expect(trend.previousMonthTotal, 80);
       expect(trend.percentageChange, 50);
     });
   });

@@ -2,8 +2,8 @@ import '../models/finance_models.dart';
 
 /// Produces explainable, offline financial insights from local transactions.
 ///
-/// This service is deliberately independent of Flutter and Provider so its
-/// calculations can be tested without rendering widgets or accessing SQLite.
+/// The service is independent of Flutter, Provider, and SQLite.
+/// All calculations use locally recorded transaction data.
 class FinancialIntelligenceService {
   const FinancialIntelligenceService();
 
@@ -14,8 +14,13 @@ class FinancialIntelligenceService {
   }) {
     final currentDate = now ?? DateTime.now();
 
+    // Only analyze expenses recorded up to the current date and time.
     final expenses = transactions
-        .where((transaction) => transaction.type == 'expense')
+        .where(
+          (transaction) =>
+              transaction.type == 'expense' &&
+              !transaction.date.isAfter(currentDate),
+        )
         .toList();
 
     return FinancialInsights(
@@ -24,7 +29,10 @@ class FinancialIntelligenceService {
         monthlyBudget: monthlyBudget,
         now: currentDate,
       ),
-      anomalies: _detectAnomalies(expenses),
+      anomalies: _detectAnomalies(
+        expenses,
+        now: currentDate,
+      ),
       trends: _calculateCategoryTrends(
         expenses: expenses,
         now: currentDate,
@@ -41,8 +49,7 @@ class FinancialIntelligenceService {
 
     final monthExpenses = expenses.where((transaction) {
       return transaction.date.year == now.year &&
-          transaction.date.month == now.month &&
-          !transaction.date.isAfter(now);
+          transaction.date.month == now.month;
     });
 
     final spent = monthExpenses.fold<double>(
@@ -79,27 +86,34 @@ class FinancialIntelligenceService {
   }
 
   List<SpendingAnomaly> _detectAnomalies(
-    List<MoneyTransaction> expenses,
-  ) {
+    List<MoneyTransaction> expenses, {
+    required DateTime now,
+  }) {
     final sorted = [...expenses]..sort((a, b) => a.date.compareTo(b.date));
 
     final previousByCategory = <int, List<double>>{};
     final anomalies = <SpendingAnomaly>[];
 
     for (final transaction in sorted) {
+      // Future transactions must never affect historical analysis.
+      if (transaction.date.isAfter(now)) {
+        continue;
+      }
+
       final history = previousByCategory[transaction.categoryId] ?? <double>[];
 
       // Require at least three earlier transactions in the same category.
       if (history.length >= 3) {
         final baseline = _median(history);
+
         final deviations =
             history.map((amount) => (amount - baseline).abs()).toList();
 
         final medianDeviation = _median(deviations);
 
-        // Median absolute deviation is more resistant to old outliers
-        // than a mean/standard-deviation threshold.
+        // Median absolute deviation is resistant to historical outliers.
         final robustDeviation = 1.4826 * medianDeviation;
+
         final threshold = baseline +
             [
               3 * robustDeviation,
@@ -144,6 +158,11 @@ class FinancialIntelligenceService {
     for (final transaction in expenses) {
       final date = transaction.date;
       final categoryId = transaction.categoryId;
+
+      // Exclude any future-dated transaction.
+      if (date.isAfter(now)) {
+        continue;
+      }
 
       if (date.year == now.year && date.month == now.month) {
         currentMonth[categoryId] =
