@@ -51,8 +51,9 @@ class SettingsScreen extends StatelessWidget {
               subtitle:
                   const Text('Removes records and restores default categories'),
               onTap: () async {
-                if (!await confirmDelete(context, 'all your local records'))
+                if (!await confirmDelete(context, 'all your local records')) {
                   return;
+                }
                 try {
                   await state.clearAll();
                 } catch (e) {

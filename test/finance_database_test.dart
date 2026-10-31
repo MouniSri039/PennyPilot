@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:pennypilot/data/finance_database.dart';
 import 'package:pennypilot/models/finance_models.dart';

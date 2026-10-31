@@ -30,7 +30,7 @@ void main() {
     expect(t.receivedInto, isEmpty);
   });
   test('Category kind survives mapping', () {
-    final c = BudgetCategory(name: 'Salary', kind: 'income');
+    const c = BudgetCategory(name: 'Salary', kind: 'income');
     final restored = BudgetCategory.fromMap({
       ...c.toMap(),
       'id': 7,
