@@ -93,6 +93,25 @@ class FinanceDatabase {
     ''');
   }
 
+  Future<void> _createChallengeProgressTable(
+    DatabaseExecutor db,
+  ) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS challenge_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        challenge_id INTEGER NOT NULL
+          REFERENCES challenges(id) ON DELETE CASCADE,
+        amount REAL NOT NULL CHECK(amount > 0),
+        recorded_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_challenge_progress_history
+      ON challenge_progress(challenge_id, recorded_at DESC, id DESC)
+    ''');
+  }
+
   Future<Database> get database async {
     if (_db != null) return _db!;
 
@@ -101,7 +120,7 @@ class FinanceDatabase {
 
     _db = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -142,6 +161,7 @@ class FinanceDatabase {
           )
         ''');
 
+        await _createChallengeProgressTable(db);
         await _createForecastSnapshotsTable(db);
         await _seed(db);
       },
@@ -202,6 +222,10 @@ class FinanceDatabase {
 
         if (oldVersion < 3) {
           await _createForecastSnapshotsTable(db);
+        }
+
+        if (oldVersion < 4) {
+          await _createChallengeProgressTable(db);
         }
       },
     );
@@ -394,6 +418,7 @@ class FinanceDatabase {
       await txn.delete('forecast_snapshots');
       await txn.delete('transactions');
       await txn.delete('categories');
+      await txn.delete('challenge_progress');
       await txn.delete('challenges');
 
       await _seed(txn);

@@ -57,7 +57,7 @@ void main() {
         "WHERE type = 'table' AND name = 'forecast_snapshots'",
       );
 
-      expect(version, 3);
+      expect(version, 4);
       expect(tables, isNotEmpty);
     });
 
@@ -297,7 +297,7 @@ void main() {
       // Opening through FinanceDatabase upgrades version 2 to version 3.
       final upgradedDb = await database.database;
 
-      expect(await upgradedDb.getVersion(), 3);
+      expect(await upgradedDb.getVersion(), 4);
 
       final tables = await upgradedDb.rawQuery(
         "SELECT name FROM sqlite_master "
