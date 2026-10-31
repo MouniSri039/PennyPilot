@@ -1,3 +1,4 @@
+
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -267,6 +268,38 @@ class FinanceDatabase {
     );
 
     return rows.map(SavingsChallenge.fromMap).toList();
+  }
+
+  /// Records one positive contribution for an existing savings challenge.
+  ///
+  /// Returns the database ID assigned to the new history entry.
+  Future<int> addChallengeProgress(
+    ChallengeProgressEntry entry,
+  ) async {
+    if (!entry.amount.isFinite || entry.amount <= 0) {
+      throw ArgumentError.value(
+        entry.amount,
+        'amount',
+        'Contribution amount must be a positive finite number.',
+      );
+    }
+
+    final db = await database;
+    return db.insert('challenge_progress', entry.toMap());
+  }
+
+  /// Returns a challenge's contributions from newest to oldest.
+  Future<List<ChallengeProgressEntry>> challengeProgressFor(
+    int challengeId,
+  ) async {
+    final rows = await (await database).query(
+      'challenge_progress',
+      where: 'challenge_id = ?',
+      whereArgs: [challengeId],
+      orderBy: 'recorded_at DESC, id DESC',
+    );
+
+    return rows.map(ChallengeProgressEntry.fromMap).toList();
   }
 
   Future<void> saveForecastSnapshot(ForecastSnapshot snapshot) async {
