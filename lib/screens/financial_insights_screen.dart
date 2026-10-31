@@ -18,6 +18,7 @@ class FinancialInsightsScreen extends StatelessWidget {
     final forecast = state.spendingForecast;
     final anomalies = state.spendingAnomalies;
     final trends = state.categoryTrends;
+    final accuracy = state.forecastAccuracy;
 
     if (state.loading || forecast == null) {
       return const Scaffold(
@@ -98,14 +99,8 @@ class FinancialInsightsScreen extends StatelessWidget {
                       color: utilization > 1 ? red : teal,
                     ),
                     const SizedBox(height: 14),
-                    _metricRow(
-                      'Spent so far',
-                      money(forecast.spentSoFar),
-                    ),
-                    _metricRow(
-                      'Monthly budget',
-                      money(forecast.monthlyBudget),
-                    ),
+                    _metricRow('Spent so far', money(forecast.spentSoFar)),
+                    _metricRow('Monthly budget', money(forecast.monthlyBudget)),
                     _metricRow(
                       'Daily spending average',
                       money(forecast.dailyAverage),
@@ -134,6 +129,19 @@ class FinancialInsightsScreen extends StatelessWidget {
                 ),
               ),
             ),
+
+            const SizedBox(height: 24),
+
+            // Historical Forecast Accuracy
+            _sectionTitle('Historical Forecast Accuracy'),
+            const SizedBox(height: 6),
+            Text(
+              'Compare previous spending predictions with actual expenses.',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 10),
+            _forecastAccuracyCard(accuracy),
+
             const SizedBox(height: 24),
             _sectionTitle('Spending Recommendations'),
             const SizedBox(height: 10),
@@ -361,6 +369,100 @@ class FinancialInsightsScreen extends StatelessWidget {
     );
   }
 
+  static Widget _forecastAccuracyCard(dynamic accuracy) {
+    if (!accuracy.hasResults) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.query_stats,
+                size: 38,
+                color: teal,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'No completed forecasts to evaluate yet',
+                style: TextStyle(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'PennyPilot records daily spending predictions. '
+                'Accuracy results will appear after a forecast month ends '
+                'and actual expenses can be compared.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final mae = accuracy.meanAbsoluteError;
+    final mape = accuracy.meanAbsolutePercentageError;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.analytics_outlined, color: teal),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Prediction performance',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _metricRow(
+              'Mean absolute error (MAE)',
+              mae == null ? 'N/A' : money(mae),
+            ),
+            _metricRow(
+              'Mean absolute percentage error',
+              mape == null ? 'N/A' : '${mape.toStringAsFixed(1)}%',
+            ),
+            _metricRow(
+              'Forecast snapshots evaluated',
+              '${accuracy.evaluatedForecastCount}',
+            ),
+            _metricRow(
+              'Zero-actual snapshots excluded from MAPE',
+              '${accuracy.zeroActualCount}',
+            ),
+            const Divider(height: 24),
+            Text(
+              'Lower MAE and MAPE values indicate more accurate spending '
+              'predictions. MAE includes zero-spending periods; MAPE excludes '
+              'them because percentage error is undefined when actual '
+              'spending is zero.',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                height: 1.4,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   static Widget _sectionTitle(String title) {
     return Text(
       title,
@@ -377,8 +479,20 @@ class FinancialInsightsScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.black54)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.black54),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
@@ -434,7 +548,10 @@ class FinancialInsightsScreen extends StatelessWidget {
             Text(
               description,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black54, height: 1.4),
+              style: const TextStyle(
+                color: Colors.black54,
+                height: 1.4,
+              ),
             ),
           ],
         ),

@@ -4,6 +4,7 @@ import 'package:pennypilot/services/financial_intelligence_service.dart';
 
 void main() {
   const service = FinancialIntelligenceService();
+  const evaluator = ForecastAccuracyEvaluator();
 
   MoneyTransaction expense({
     required int categoryId,
@@ -30,6 +31,19 @@ void main() {
       amount: amount,
       date: date,
       description: 'Test income',
+    );
+  }
+
+  ForecastSnapshot snapshot({
+    required int year,
+    required int month,
+    required int day,
+    required double predicted,
+  }) {
+    return ForecastSnapshot(
+      forecastMonth: DateTime(year, month),
+      snapshotDate: DateTime(year, month, day),
+      predictedTotal: predicted,
     );
   }
 
@@ -339,6 +353,149 @@ void main() {
       expect(trend.currentMonthTotal, 120);
       expect(trend.previousMonthTotal, 80);
       expect(trend.percentageChange, 50);
+    });
+  });
+
+  group('Historical forecast accuracy', () {
+    test('calculates MAE and MAPE for completed months', () {
+      final snapshots = [
+        snapshot(year: 2026, month: 8, day: 10, predicted: 120),
+        snapshot(year: 2026, month: 8, day: 20, predicted: 180),
+        snapshot(year: 2026, month: 9, day: 10, predicted: 220),
+      ];
+
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 100,
+          date: DateTime(2026, 8, 15),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 100,
+          date: DateTime(2026, 9, 15),
+        ),
+        expense(
+          categoryId: 2,
+          amount: 100,
+          date: DateTime(2026, 9, 20),
+        ),
+      ];
+
+      final report = evaluator.evaluate(
+        snapshots: snapshots,
+        transactions: transactions,
+        now: DateTime(2026, 10, 5),
+      );
+
+      expect(report.evaluatedForecastCount, 3);
+      expect(report.meanAbsoluteError, closeTo(40, 0.001));
+      expect(
+        report.meanAbsolutePercentageError,
+        closeTo(36.6667, 0.001),
+      );
+      expect(report.zeroActualCount, 0);
+    });
+
+    test('does not evaluate the current or future months', () {
+      final report = evaluator.evaluate(
+        snapshots: [
+          snapshot(year: 2026, month: 10, day: 5, predicted: 500),
+          snapshot(year: 2026, month: 11, day: 5, predicted: 600),
+        ],
+        transactions: [],
+        now: DateTime(2026, 10, 15),
+      );
+
+      expect(report.hasResults, false);
+      expect(report.meanAbsoluteError, isNull);
+    });
+
+    test(
+      'excludes zero actual spending from MAPE but includes it in MAE',
+      () {
+        final report = evaluator.evaluate(
+          snapshots: [
+            snapshot(year: 2026, month: 8, day: 10, predicted: 100),
+            snapshot(year: 2026, month: 9, day: 10, predicted: 200),
+          ],
+          transactions: [
+            expense(
+              categoryId: 1,
+              amount: 100,
+              date: DateTime(2026, 9, 15),
+            ),
+          ],
+          now: DateTime(2026, 10, 5),
+        );
+
+        expect(report.evaluatedForecastCount, 2);
+        expect(report.meanAbsoluteError, 100);
+        expect(report.meanAbsolutePercentageError, 100);
+        expect(report.zeroActualCount, 1);
+      },
+    );
+
+    test('returns null MAPE when all actual totals are zero', () {
+      final report = evaluator.evaluate(
+        snapshots: [
+          snapshot(year: 2026, month: 9, day: 10, predicted: 100),
+        ],
+        transactions: [],
+        now: DateTime(2026, 10, 5),
+      );
+
+      expect(report.meanAbsoluteError, 100);
+      expect(report.meanAbsolutePercentageError, isNull);
+      expect(report.zeroActualCount, 1);
+    });
+
+    test('ignores income and future-dated transactions', () {
+      final report = evaluator.evaluate(
+        snapshots: [
+          snapshot(year: 2026, month: 9, day: 10, predicted: 100),
+        ],
+        transactions: [
+          income(
+            categoryId: 2,
+            amount: 500,
+            date: DateTime(2026, 9, 15),
+          ),
+          expense(
+            categoryId: 1,
+            amount: 100,
+            date: DateTime(2026, 9, 15),
+          ),
+          expense(
+            categoryId: 1,
+            amount: 900,
+            date: DateTime(2026, 10, 10),
+          ),
+        ],
+        now: DateTime(2026, 10, 5),
+      );
+
+      expect(report.meanAbsoluteError, 0);
+      expect(report.meanAbsolutePercentageError, 0);
+    });
+
+    test('handles December to January month boundaries', () {
+      final report = evaluator.evaluate(
+        snapshots: [
+          snapshot(year: 2025, month: 12, day: 15, predicted: 150),
+        ],
+        transactions: [
+          expense(
+            categoryId: 1,
+            amount: 100,
+            date: DateTime(2025, 12, 20),
+          ),
+        ],
+        now: DateTime(2026, 1, 5),
+      );
+
+      expect(report.evaluatedForecastCount, 1);
+      expect(report.meanAbsoluteError, 50);
     });
   });
 }

@@ -1,10 +1,21 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+
 import '../models/finance_models.dart';
 
 class FinanceDatabase {
-  FinanceDatabase._();
+  FinanceDatabase._({String? databasePath}) : _databasePath = databasePath;
+
   static final FinanceDatabase instance = FinanceDatabase._();
+
+  /// Creates an isolated database instance for tests.
+  factory FinanceDatabase.forTesting({
+    required String databasePath,
+  }) {
+    return FinanceDatabase._(databasePath: databasePath);
+  }
+
+  final String? _databasePath;
   Database? _db;
 
   static const expenseDefaults = [
@@ -17,8 +28,9 @@ class FinanceDatabase {
     'Entertainment',
     'Healthcare',
     'Education',
-    'Other'
+    'Other',
   ];
+
   static const incomeDefaults = [
     'Salary',
     'Part-Time Job',
@@ -31,201 +43,359 @@ class FinanceDatabase {
     'Interest',
     'Investment Income',
     'Scholarship/Grant',
-    'Other Income'
+    'Other Income',
   ];
 
   Future<void> _seed(DatabaseExecutor db) async {
     for (final name in expenseDefaults) {
       await db.insert(
-          'categories',
-          {
-            'name': name,
-            'icon': 'category',
-            'budget_limit': 0.0,
-            'kind': 'expense'
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+        'categories',
+        {
+          'name': name,
+          'icon': 'category',
+          'budget_limit': 0.0,
+          'kind': 'expense',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
+
     for (final name in incomeDefaults) {
       await db.insert(
-          'categories',
-          {
-            'name': name,
-            'icon': 'category',
-            'budget_limit': 0.0,
-            'kind': 'income'
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+        'categories',
+        {
+          'name': name,
+          'icon': 'category',
+          'budget_limit': 0.0,
+          'kind': 'income',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
+  }
+
+  Future<void> _createForecastSnapshotsTable(
+    DatabaseExecutor db,
+  ) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forecast_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        forecast_month TEXT NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        predicted_total REAL NOT NULL CHECK(predicted_total >= 0),
+        UNIQUE(forecast_month, snapshot_date)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_forecast_snapshots_month
+      ON forecast_snapshots(forecast_month)
+    ''');
   }
 
   Future<Database> get database async {
     if (_db != null) return _db!;
+
+    final path =
+        _databasePath ?? join(await getDatabasesPath(), 'pennypilot.db');
+
     _db = await openDatabase(
-      join(await getDatabasesPath(), 'pennypilot.db'),
-      version: 2,
-      onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+      path,
+      version: 3,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
       onCreate: (db, _) async {
-        await db.execute("""CREATE TABLE categories (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-          icon TEXT NOT NULL, budget_limit REAL NOT NULL DEFAULT 0,
-          kind TEXT NOT NULL DEFAULT 'expense' CHECK(kind IN ('expense','income')),
-          UNIQUE(name, kind))""");
-        await db.execute("""CREATE TABLE transactions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-          type TEXT NOT NULL CHECK(type IN ('expense','income')),
-          amount REAL NOT NULL CHECK(amount > 0), date TEXT NOT NULL,
-          description TEXT NOT NULL, payment_method TEXT NOT NULL,
-          received_into TEXT NOT NULL DEFAULT '')""");
-        await db.execute("""CREATE TABLE challenges (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
-          target REAL NOT NULL CHECK(target > 0), saved REAL NOT NULL DEFAULT 0,
-          status TEXT NOT NULL)""");
+        await db.execute('''
+          CREATE TABLE categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            icon TEXT NOT NULL,
+            budget_limit REAL NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL DEFAULT 'expense'
+              CHECK(kind IN ('expense','income')),
+            UNIQUE(name, kind)
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_id INTEGER NOT NULL
+              REFERENCES categories(id) ON DELETE RESTRICT,
+            type TEXT NOT NULL CHECK(type IN ('expense','income')),
+            amount REAL NOT NULL CHECK(amount > 0),
+            date TEXT NOT NULL,
+            description TEXT NOT NULL,
+            payment_method TEXT NOT NULL,
+            received_into TEXT NOT NULL DEFAULT ''
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE challenges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            target REAL NOT NULL CHECK(target > 0),
+            saved REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL
+          )
+        ''');
+
+        await _createForecastSnapshotsTable(db);
         await _seed(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          // Keep existing category IDs intact, preserving all foreign keys.
-          // SQLite's original UNIQUE(name) constraint remains on upgraded DBs,
-          // so the income fallback is named "Other Income" there.
           await db.execute(
-              "ALTER TABLE categories ADD COLUMN kind TEXT NOT NULL DEFAULT 'expense'");
+            "ALTER TABLE categories ADD COLUMN kind "
+            "TEXT NOT NULL DEFAULT 'expense'",
+          );
+
           await db.execute(
-              "ALTER TABLE transactions ADD COLUMN received_into TEXT NOT NULL DEFAULT ''");
-          // Seed income categories without conflicting with legacy UNIQUE(name).
+            "ALTER TABLE transactions ADD COLUMN received_into "
+            "TEXT NOT NULL DEFAULT ''",
+          );
+
           for (final name in incomeDefaults) {
-            final actualName = name;
             await db.insert(
-                'categories',
-                {
-                  'name': actualName,
-                  'icon': 'category',
-                  'budget_limit': 0.0,
-                  'kind': 'income',
-                },
-                conflictAlgorithm: ConflictAlgorithm.ignore);
+              'categories',
+              {
+                'name': name,
+                'icon': 'category',
+                'budget_limit': 0.0,
+                'kind': 'income',
+              },
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
           }
+
           for (final name in expenseDefaults) {
             await db.insert(
-                'categories',
-                {
-                  'name': name,
-                  'icon': 'category',
-                  'budget_limit': 0.0,
-                  'kind': 'expense',
-                },
-                conflictAlgorithm: ConflictAlgorithm.ignore);
+              'categories',
+              {
+                'name': name,
+                'icon': 'category',
+                'budget_limit': 0.0,
+                'kind': 'expense',
+              },
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
           }
-          final incomeOther = await db.query('categories',
-              columns: ['id'],
-              where: 'name = ? AND kind = ?',
-              whereArgs: ['Other Income', 'income'],
-              limit: 1);
+
+          final incomeOther = await db.query(
+            'categories',
+            columns: ['id'],
+            where: 'name = ? AND kind = ?',
+            whereArgs: ['Other Income', 'income'],
+            limit: 1,
+          );
+
           if (incomeOther.isNotEmpty) {
             await db.update(
-                'transactions', {'category_id': incomeOther.first['id']},
-                where: "type = 'income'");
+              'transactions',
+              {'category_id': incomeOther.first['id']},
+              where: "type = 'income'",
+            );
           }
+        }
+
+        if (oldVersion < 3) {
+          await _createForecastSnapshotsTable(db);
         }
       },
     );
+
     return _db!;
   }
 
-  Future<List<BudgetCategory>> categories() async =>
-      (await (await database).query('categories', orderBy: 'kind, name'))
-          .map(BudgetCategory.fromMap)
-          .toList();
-  Future<List<MoneyTransaction>> transactions() async => (await (await database)
-          .query('transactions', orderBy: 'date DESC, id DESC'))
-      .map(MoneyTransaction.fromMap)
-      .toList();
-  Future<List<SavingsChallenge>> challenges() async =>
-      (await (await database).query('challenges', orderBy: 'id DESC'))
-          .map(SavingsChallenge.fromMap)
-          .toList();
+  /// Closes this database instance. Used by tests and cleanup workflows.
+  Future<void> close() async {
+    final current = _db;
+    _db = null;
+    if (current != null && current.isOpen) {
+      await current.close();
+    }
+  }
+
+  Future<List<BudgetCategory>> categories() async {
+    final rows = await (await database).query(
+      'categories',
+      orderBy: 'kind, name',
+    );
+
+    return rows.map(BudgetCategory.fromMap).toList();
+  }
+
+  Future<List<MoneyTransaction>> transactions() async {
+    final rows = await (await database).query(
+      'transactions',
+      orderBy: 'date DESC, id DESC',
+    );
+
+    return rows.map(MoneyTransaction.fromMap).toList();
+  }
+
+  Future<List<SavingsChallenge>> challenges() async {
+    final rows = await (await database).query(
+      'challenges',
+      orderBy: 'id DESC',
+    );
+
+    return rows.map(SavingsChallenge.fromMap).toList();
+  }
+
+  Future<void> saveForecastSnapshot(ForecastSnapshot snapshot) async {
+    final db = await database;
+
+    await db.insert(
+      'forecast_snapshots',
+      snapshot.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<ForecastSnapshot>> forecastSnapshots() async {
+    final rows = await (await database).query(
+      'forecast_snapshots',
+      orderBy: 'forecast_month ASC, snapshot_date ASC',
+    );
+
+    return rows.map(ForecastSnapshot.fromMap).toList();
+  }
 
   Future<void> saveCategory(BudgetCategory c) async {
     final db = await database;
+
     if (c.id == null) {
       await db.insert('categories', c.toMap());
     } else {
-      // Prevent reclassifying a category while linked transactions exist.
-      final count = Sqflite.firstIntValue(await db.rawQuery(
+      final count = Sqflite.firstIntValue(
+            await db.rawQuery(
               'SELECT COUNT(*) FROM transactions WHERE category_id = ?',
-              [c.id])) ??
+              [c.id],
+            ),
+          ) ??
           0;
+
       if (count > 0) {
-        final old = (await db.query('categories',
-                columns: ['kind'], where: 'id = ?', whereArgs: [c.id]))
+        final old = (await db.query(
+          'categories',
+          columns: ['kind'],
+          where: 'id = ?',
+          whereArgs: [c.id],
+        ))
             .first['kind'];
+
         if (old != c.kind) {
           throw StateError(
-              'Move linked transactions before changing category type.');
+            'Move linked transactions before changing category type.',
+          );
         }
       }
-      await db
-          .update('categories', c.toMap(), where: 'id = ?', whereArgs: [c.id]);
+
+      await db.update(
+        'categories',
+        c.toMap(),
+        where: 'id = ?',
+        whereArgs: [c.id],
+      );
     }
   }
 
   Future<void> deleteCategory(int id) async {
     final db = await database;
-    final count = Sqflite.firstIntValue(await db.rawQuery(
-            'SELECT COUNT(*) FROM transactions WHERE category_id = ?', [id])) ??
+
+    final count = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM transactions WHERE category_id = ?',
+            [id],
+          ),
+        ) ??
         0;
+
     if (count > 0) {
       throw StateError(
-          'Move or delete linked transactions before deleting this category.');
+        'Move or delete linked transactions before deleting this category.',
+      );
     }
-    await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+
+    await db.delete(
+      'categories',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> saveTransaction(MoneyTransaction t) async {
     final db = await database;
-    final category = await db.query('categories',
-        columns: ['kind'],
-        where: 'id = ?',
-        whereArgs: [t.categoryId],
-        limit: 1);
+
+    final category = await db.query(
+      'categories',
+      columns: ['kind'],
+      where: 'id = ?',
+      whereArgs: [t.categoryId],
+      limit: 1,
+    );
+
     if (category.isEmpty || category.first['kind'] != t.type) {
-      throw StateError('Select a category matching the transaction type.');
+      throw StateError(
+        'Select a category matching the transaction type.',
+      );
     }
+
     if (t.id == null) {
       await db.insert('transactions', t.toMap());
     } else {
-      await db.update('transactions', t.toMap(),
-          where: 'id = ?', whereArgs: [t.id]);
+      await db.update(
+        'transactions',
+        t.toMap(),
+        where: 'id = ?',
+        whereArgs: [t.id],
+      );
     }
   }
 
   Future<void> deleteTransaction(int id) async {
-    await (await database)
-        .delete('transactions', where: 'id = ?', whereArgs: [id]);
+    await (await database).delete(
+      'transactions',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> saveChallenge(SavingsChallenge c) async {
     final db = await database;
+
     if (c.id == null) {
       await db.insert('challenges', c.toMap());
     } else {
-      await db
-          .update('challenges', c.toMap(), where: 'id = ?', whereArgs: [c.id]);
+      await db.update(
+        'challenges',
+        c.toMap(),
+        where: 'id = ?',
+        whereArgs: [c.id],
+      );
     }
   }
 
   Future<void> deleteChallenge(int id) async {
-    await (await database)
-        .delete('challenges', where: 'id = ?', whereArgs: [id]);
+    await (await database).delete(
+      'challenges',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> clearAll() async {
     final db = await database;
+
     await db.transaction((txn) async {
+      await txn.delete('forecast_snapshots');
       await txn.delete('transactions');
       await txn.delete('categories');
       await txn.delete('challenges');
+
       await _seed(txn);
     });
   }

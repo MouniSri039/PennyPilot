@@ -1,9 +1,6 @@
 import '../models/finance_models.dart';
 
 /// Produces explainable, offline financial insights from local transactions.
-///
-/// The service is independent of Flutter, Provider, and SQLite.
-/// All calculations use locally recorded transaction data.
 class FinancialIntelligenceService {
   const FinancialIntelligenceService();
 
@@ -14,7 +11,6 @@ class FinancialIntelligenceService {
   }) {
     final currentDate = now ?? DateTime.now();
 
-    // Only analyze expenses recorded up to the current date and time.
     final expenses = transactions
         .where(
           (transaction) =>
@@ -29,10 +25,7 @@ class FinancialIntelligenceService {
         monthlyBudget: monthlyBudget,
         now: currentDate,
       ),
-      anomalies: _detectAnomalies(
-        expenses,
-        now: currentDate,
-      ),
+      anomalies: _detectAnomalies(expenses, now: currentDate),
       trends: _calculateCategoryTrends(
         expenses: expenses,
         now: currentDate,
@@ -47,10 +40,9 @@ class FinancialIntelligenceService {
   }) {
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
 
-    final monthExpenses = expenses.where((transaction) {
-      return transaction.date.year == now.year &&
-          transaction.date.month == now.month;
-    });
+    final monthExpenses = expenses.where((transaction) =>
+        transaction.date.year == now.year &&
+        transaction.date.month == now.month);
 
     final spent = monthExpenses.fold<double>(
       0,
@@ -63,15 +55,11 @@ class FinancialIntelligenceService {
     final budgetUtilization =
         monthlyBudget > 0 ? projectedTotal / monthlyBudget : null;
 
-    String explanation;
-
-    if (spent == 0) {
-      explanation = 'No expenses have been recorded this month yet.';
-    } else {
-      explanation = 'Based on ${now.day} days of recorded spending, '
-          'the projected monthly expense is '
-          '${projectedTotal.toStringAsFixed(2)}.';
-    }
+    final explanation = spent == 0
+        ? 'No expenses have been recorded this month yet.'
+        : 'Based on ${now.day} days of recorded spending, '
+            'the projected monthly expense is '
+            '${projectedTotal.toStringAsFixed(2)}.';
 
     return MonthlySpendingForecast(
       spentSoFar: spent,
@@ -95,14 +83,10 @@ class FinancialIntelligenceService {
     final anomalies = <SpendingAnomaly>[];
 
     for (final transaction in sorted) {
-      // Future transactions must never affect historical analysis.
-      if (transaction.date.isAfter(now)) {
-        continue;
-      }
+      if (transaction.date.isAfter(now)) continue;
 
       final history = previousByCategory[transaction.categoryId] ?? <double>[];
 
-      // Require at least three earlier transactions in the same category.
       if (history.length >= 3) {
         final baseline = _median(history);
 
@@ -110,8 +94,6 @@ class FinancialIntelligenceService {
             history.map((amount) => (amount - baseline).abs()).toList();
 
         final medianDeviation = _median(deviations);
-
-        // Median absolute deviation is resistant to historical outliers.
         final robustDeviation = 1.4826 * medianDeviation;
 
         final threshold = baseline +
@@ -159,10 +141,7 @@ class FinancialIntelligenceService {
       final date = transaction.date;
       final categoryId = transaction.categoryId;
 
-      // Exclude any future-dated transaction.
-      if (date.isAfter(now)) {
-        continue;
-      }
+      if (date.isAfter(now)) continue;
 
       if (date.year == now.year && date.month == now.month) {
         currentMonth[categoryId] =
@@ -205,12 +184,134 @@ class FinancialIntelligenceService {
     final sorted = [...values]..sort();
     final middle = sorted.length ~/ 2;
 
-    if (sorted.length.isOdd) {
-      return sorted[middle];
-    }
+    if (sorted.length.isOdd) return sorted[middle];
 
     return (sorted[middle - 1] + sorted[middle]) / 2;
   }
+}
+
+/// Evaluates saved forecasts against completed-month expense totals.
+class ForecastAccuracyEvaluator {
+  const ForecastAccuracyEvaluator();
+
+  ForecastAccuracyReport evaluate({
+    required Iterable<ForecastSnapshot> snapshots,
+    required Iterable<MoneyTransaction> transactions,
+    required DateTime now,
+  }) {
+    final currentMonth = DateTime(now.year, now.month);
+
+    final actualsByMonth = <String, double>{};
+
+    for (final transaction in transactions) {
+      if (transaction.type != 'expense') continue;
+      if (transaction.date.isAfter(now)) continue;
+
+      final date = transaction.date;
+      final key = _monthKey(date.year, date.month);
+
+      actualsByMonth[key] = (actualsByMonth[key] ?? 0) + transaction.amount;
+    }
+
+    final evaluations = <ForecastEvaluation>[];
+
+    for (final snapshot in snapshots) {
+      final month = DateTime(
+        snapshot.forecastMonth.year,
+        snapshot.forecastMonth.month,
+      );
+
+      // A forecast can only be evaluated after its month has ended.
+      if (!month.isBefore(currentMonth)) continue;
+
+      if (!snapshot.predictedTotal.isFinite || snapshot.predictedTotal < 0) {
+        continue;
+      }
+
+      final key = _monthKey(month.year, month.month);
+      final actual = actualsByMonth[key] ?? 0;
+
+      evaluations.add(
+        ForecastEvaluation(
+          snapshot: snapshot,
+          actualTotal: actual,
+          absoluteError: (snapshot.predictedTotal - actual).abs(),
+          percentageError: actual > 0
+              ? ((snapshot.predictedTotal - actual).abs() / actual) * 100
+              : null,
+        ),
+      );
+    }
+
+    if (evaluations.isEmpty) {
+      return const ForecastAccuracyReport(
+        evaluations: [],
+        meanAbsoluteError: null,
+        meanAbsolutePercentageError: null,
+        zeroActualCount: 0,
+      );
+    }
+
+    final mae = evaluations.fold<double>(
+          0,
+          (total, evaluation) => total + evaluation.absoluteError,
+        ) /
+        evaluations.length;
+
+    final percentageEvaluations = evaluations
+        .where((evaluation) => evaluation.percentageError != null)
+        .toList();
+
+    final mape = percentageEvaluations.isEmpty
+        ? null
+        : percentageEvaluations.fold<double>(
+              0,
+              (total, evaluation) => total + evaluation.percentageError!,
+            ) /
+            percentageEvaluations.length;
+
+    return ForecastAccuracyReport(
+      evaluations: evaluations,
+      meanAbsoluteError: mae,
+      meanAbsolutePercentageError: mape,
+      zeroActualCount: evaluations.length - percentageEvaluations.length,
+    );
+  }
+
+  String _monthKey(int year, int month) =>
+      '$year-${month.toString().padLeft(2, '0')}';
+}
+
+class ForecastAccuracyReport {
+  final List<ForecastEvaluation> evaluations;
+  final double? meanAbsoluteError;
+  final double? meanAbsolutePercentageError;
+  final int zeroActualCount;
+
+  const ForecastAccuracyReport({
+    required this.evaluations,
+    required this.meanAbsoluteError,
+    required this.meanAbsolutePercentageError,
+    required this.zeroActualCount,
+  });
+
+  int get evaluatedForecastCount => evaluations.length;
+
+  bool get hasResults => evaluations.isNotEmpty;
+}
+
+class ForecastEvaluation {
+  final ForecastSnapshot snapshot;
+  final double actualTotal;
+  final double absoluteError;
+  final double? percentageError;
+
+  const ForecastEvaluation({
+    required this.snapshot,
+    required this.actualTotal,
+    required this.absoluteError,
+    required this.percentageError,
+  });
 }
 
 class FinancialInsights {

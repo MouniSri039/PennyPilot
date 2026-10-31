@@ -12,11 +12,23 @@ class FinanceState extends ChangeNotifier {
   final FinancialIntelligenceService _intelligenceService =
       const FinancialIntelligenceService();
 
+  final ForecastAccuracyEvaluator _accuracyEvaluator =
+      const ForecastAccuracyEvaluator();
+
   List<BudgetCategory> categories = [];
   List<MoneyTransaction> transactions = [];
   List<SavingsChallenge> challenges = [];
 
+  List<ForecastSnapshot> forecastSnapshots = [];
+
   FinancialInsights? insights;
+
+  ForecastAccuracyReport forecastAccuracy = const ForecastAccuracyReport(
+    evaluations: [],
+    meanAbsoluteError: null,
+    meanAbsolutePercentageError: null,
+    zeroActualCount: 0,
+  );
 
   double monthlyBudget = 500;
   bool remindersEnabled = false;
@@ -43,7 +55,13 @@ class FinanceState extends ChangeNotifier {
     transactions = await db.transactions();
     challenges = await db.challenges();
 
-    _refreshInsights();
+    final now = DateTime.now();
+
+    _refreshInsights(now);
+
+    await _saveCurrentForecastSnapshot(now);
+
+    await _refreshForecastAccuracy(now);
 
     loading = false;
     error = null;
@@ -51,11 +69,35 @@ class FinanceState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _refreshInsights() {
+  void _refreshInsights(DateTime now) {
     insights = _intelligenceService.analyze(
       transactions: transactions,
       monthlyBudget: monthlyBudget,
-      now: DateTime.now(),
+      now: now,
+    );
+  }
+
+  Future<void> _saveCurrentForecastSnapshot(DateTime now) async {
+    final forecast = insights?.forecast;
+
+    if (forecast == null) return;
+
+    final snapshot = ForecastSnapshot(
+      forecastMonth: DateTime(now.year, now.month),
+      snapshotDate: DateTime(now.year, now.month, now.day),
+      predictedTotal: forecast.projectedTotal,
+    );
+
+    await db.saveForecastSnapshot(snapshot);
+  }
+
+  Future<void> _refreshForecastAccuracy(DateTime now) async {
+    forecastSnapshots = await db.forecastSnapshots();
+
+    forecastAccuracy = _accuracyEvaluator.evaluate(
+      snapshots: forecastSnapshots,
+      transactions: transactions,
+      now: now,
     );
   }
 
@@ -92,7 +134,7 @@ class FinanceState extends ChangeNotifier {
   Future<void> setBudget(double value) async {
     monthlyBudget = value;
 
-    _refreshInsights();
+    _refreshInsights(DateTime.now());
     notifyListeners();
 
     await (await SharedPreferences.getInstance())
@@ -115,7 +157,10 @@ class FinanceState extends ChangeNotifier {
 
   double get remaining => monthlyBudget - spent;
 
-  String get tip => SpendingHelper.advice(spent: spent, limit: monthlyBudget);
+  String get tip => SpendingHelper.advice(
+        spent: spent,
+        limit: monthlyBudget,
+      );
 
   MonthlySpendingForecast? get spendingForecast => insights?.forecast;
 
