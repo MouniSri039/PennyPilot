@@ -19,6 +19,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   DateTime month = DateTime(DateTime.now().year, DateTime.now().month);
   String searchQuery = '';
 
+  // Transaction list filter: all, income, or expense.
+  String transactionTypeFilter = 'all';
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<FinanceState>();
@@ -33,10 +36,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
         )
         .toList();
 
-    // Search only narrows the transaction list, not the financial chart.
+    // Search and transaction type only narrow the displayed list.
+    // They do not change the monthly summary or expense chart.
     final query = searchQuery.trim().toLowerCase();
 
     final searchedTransactions = filtered.where((t) {
+      final matchesType =
+          transactionTypeFilter == 'all' || t.type == transactionTypeFilter;
+
+      if (!matchesType) return false;
+
       if (query.isEmpty) return true;
 
       final description = t.description.toLowerCase();
@@ -63,10 +72,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final entries = expenseByCategory.entries.toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('History & Insights')),
+      appBar: AppBar(
+        title: const Text('History & Insights'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Category filter.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -93,6 +105,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ],
             ),
           ),
+
+          // Month navigation.
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -121,6 +135,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ],
           ),
+
+          // Monthly summary.
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -149,12 +165,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
           ),
+
           const SizedBox(height: 14),
           const Text(
             'Expenses by Category',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
+
+          // Expense chart.
           if (entries.isEmpty)
             const Card(
               child: ListTile(
@@ -212,10 +234,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ),
             ),
+
           const SizedBox(height: 20),
           const Text(
             'Transactions',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -235,9 +261,41 @@ class _HistoryScreenState extends State<HistoryScreen> {
               });
             },
           ),
+
           const SizedBox(height: 12),
 
-          if (query.isNotEmpty)
+          // Filter the displayed transactions by type.
+          SegmentedButton<String>(
+            key: const Key('transaction-type-filter'),
+            segments: const [
+              ButtonSegment<String>(
+                value: 'all',
+                label: Text('All'),
+              ),
+              ButtonSegment<String>(
+                value: 'income',
+                label: Text('Income'),
+                icon: Icon(Icons.arrow_downward),
+              ),
+              ButtonSegment<String>(
+                value: 'expense',
+                label: Text('Expense'),
+                icon: Icon(Icons.arrow_upward),
+              ),
+            ],
+            selected: {transactionTypeFilter},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) {
+              setState(() {
+                transactionTypeFilter = selection.first;
+              });
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          // Show the matching count when search or type filtering is active.
+          if (query.isNotEmpty || transactionTypeFilter != 'all')
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
@@ -246,23 +304,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
 
+          // Empty state.
           if (searchedTransactions.isEmpty)
             Card(
               child: ListTile(
                 leading: const Icon(Icons.search_off),
                 title: Text(
-                  query.isNotEmpty
+                  query.isNotEmpty || transactionTypeFilter != 'all'
                       ? 'No matching transactions'
                       : 'No transactions for this selection',
                 ),
                 subtitle: Text(
-                  query.isNotEmpty
-                      ? 'Try another description or category.'
+                  query.isNotEmpty || transactionTypeFilter != 'all'
+                      ? 'Try another search or transaction type.'
                       : 'Try selecting another month or category.',
                 ),
               ),
             ),
 
+          // Matching transactions.
           for (final MoneyTransaction t in searchedTransactions)
             Card(
               child: ListTile(
