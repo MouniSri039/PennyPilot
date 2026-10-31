@@ -39,7 +39,7 @@ class ChallengeCsvExportService {
       }),
     ];
 
-    return rows.map((row) => row.map(_escape).join(',')).join('\r\n') + '\r\n';
+    return '${rows.map((row) => row.map(_escape).join(',')).join('\r\n')}\r\n';
   }
 
   static String _escape(String value) {
