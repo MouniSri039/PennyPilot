@@ -1,4 +1,3 @@
-
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -238,6 +237,7 @@ class FinanceDatabase {
   Future<void> close() async {
     final current = _db;
     _db = null;
+
     if (current != null && current.isOpen) {
       await current.close();
     }
@@ -270,9 +270,7 @@ class FinanceDatabase {
     return rows.map(SavingsChallenge.fromMap).toList();
   }
 
-  /// Records one positive contribution for an existing savings challenge.
-  ///
-  /// Returns the database ID assigned to the new history entry.
+  /// Records a contribution and updates its challenge balance atomically.
   Future<int> addChallengeProgress(
     ChallengeProgressEntry entry,
   ) async {
@@ -285,7 +283,47 @@ class FinanceDatabase {
     }
 
     final db = await database;
-    return db.insert('challenge_progress', entry.toMap());
+
+    return db.transaction((txn) async {
+      final challengeRows = await txn.query(
+        'challenges',
+        columns: ['target', 'saved'],
+        where: 'id = ?',
+        whereArgs: [entry.challengeId],
+        limit: 1,
+      );
+
+      if (challengeRows.isEmpty) {
+        throw StateError('Savings challenge does not exist.');
+      }
+
+      final target = (challengeRows.first['target'] as num).toDouble();
+
+      final currentSaved = (challengeRows.first['saved'] as num).toDouble();
+
+      final updatedSaved = currentSaved + entry.amount;
+
+      if (!updatedSaved.isFinite) {
+        throw ArgumentError('Updated savings balance is invalid.');
+      }
+
+      final progressId = await txn.insert(
+        'challenge_progress',
+        entry.toMap(),
+      );
+
+      await txn.update(
+        'challenges',
+        {
+          'saved': updatedSaved,
+          'status': updatedSaved >= target ? 'finished' : 'active',
+        },
+        where: 'id = ?',
+        whereArgs: [entry.challengeId],
+      );
+
+      return progressId;
+    });
   }
 
   /// Returns a challenge's contributions from newest to oldest.
@@ -302,7 +340,9 @@ class FinanceDatabase {
     return rows.map(ChallengeProgressEntry.fromMap).toList();
   }
 
-  Future<void> saveForecastSnapshot(ForecastSnapshot snapshot) async {
+  Future<void> saveForecastSnapshot(
+    ForecastSnapshot snapshot,
+  ) async {
     final db = await database;
 
     await db.insert(

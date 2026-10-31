@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -116,8 +115,7 @@ class FinanceState extends ChangeNotifier {
   Future<void> saveCategory(BudgetCategory c) =>
       _perform(() => db.saveCategory(c));
 
-  Future<void> deleteCategory(int id) =>
-      _perform(() => db.deleteCategory(id));
+  Future<void> deleteCategory(int id) => _perform(() => db.deleteCategory(id));
 
   Future<void> saveTransaction(MoneyTransaction t) =>
       _perform(() => db.saveTransaction(t));
@@ -131,13 +129,15 @@ class FinanceState extends ChangeNotifier {
   Future<void> deleteChallenge(int id) =>
       _perform(() => db.deleteChallenge(id));
 
-  /// Records a contribution and updates the challenge's saved balance.
+  /// Records a contribution and updates its challenge balance atomically.
   Future<void> addChallengeProgress(
     SavingsChallenge challenge,
     double amount,
   ) async {
     if (challenge.id == null) {
-      throw ArgumentError('Save the challenge before adding progress.');
+      throw ArgumentError(
+        'Save the challenge before adding progress.',
+      );
     }
 
     if (!amount.isFinite || amount <= 0) {
@@ -149,16 +149,6 @@ class FinanceState extends ChangeNotifier {
     }
 
     await _perform(() async {
-      final updatedSaved = challenge.saved + amount;
-
-      final updatedChallenge = SavingsChallenge(
-        id: challenge.id,
-        title: challenge.title,
-        target: challenge.target,
-        saved: updatedSaved,
-        status: updatedSaved >= challenge.target ? 'completed' : 'active',
-      );
-
       await db.addChallengeProgress(
         ChallengeProgressEntry(
           challengeId: challenge.id!,
@@ -166,8 +156,6 @@ class FinanceState extends ChangeNotifier {
           recordedAt: DateTime.now(),
         ),
       );
-
-      await db.saveChallenge(updatedChallenge);
     });
   }
 

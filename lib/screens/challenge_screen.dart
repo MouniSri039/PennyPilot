@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/finance_models.dart';
@@ -204,14 +205,9 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
     }
 
     try {
-      await context.read<FinanceState>().saveChallenge(
-            SavingsChallenge(
-              id: challenge.id,
-              title: challenge.title,
-              target: challenge.target,
-              saved: updatedSaved,
-              status: updatedSaved >= challenge.target ? 'finished' : 'active',
-            ),
+      await context.read<FinanceState>().addChallengeProgress(
+            challenge,
+            contribution,
           );
 
       if (!context.mounted) return;
@@ -230,6 +226,115 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
         showError(context, e);
       }
     }
+  }
+
+  // Displays the contribution history for a challenge.
+  Future<void> _showContributionHistory(
+    BuildContext context,
+    SavingsChallenge challenge,
+  ) async {
+    if (challenge.id == null) return;
+
+    final historyFuture =
+        context.read<FinanceState>().challengeProgressFor(challenge.id!);
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('${challenge.title} History'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 360,
+            child: FutureBuilder<List<ChallengeProgressEntry>>(
+              future: historyFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Text('Could not load contribution history.'),
+                  );
+                }
+
+                final entries = snapshot.data ?? [];
+
+                if (entries.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Text(
+                        'No contributions recorded yet.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                final lifetimeTotal = entries.fold<double>(
+                  0,
+                  (sum, entry) => sum + entry.amount,
+                );
+
+                return Column(
+                  children: [
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.savings_outlined),
+                        title: const Text('Lifetime contributions'),
+                        trailing: Text(
+                          money(lifetimeTotal),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: entries.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final entry = entries[index];
+
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.add),
+                            ),
+                            title: Text(
+                              money(entry.amount),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              DateFormat('MMM d, yyyy • h:mm a')
+                                  .format(entry.recordedAt),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> reset(
@@ -629,6 +734,11 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
                       completed ? null : () => addProgress(context, challenge),
                   child: const Text('Add progress'),
                 ),
+                TextButton.icon(
+                  onPressed: () => _showContributionHistory(context, challenge),
+                  icon: const Icon(Icons.history, size: 18),
+                  label: const Text('History'),
+                ),
                 TextButton(
                   onPressed: () => reset(context, challenge),
                   child: const Text('Reset'),
@@ -645,4 +755,3 @@ class _ChallengeScreenState extends State<ChallengeScreen> {
     );
   }
 }
-
