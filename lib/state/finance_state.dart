@@ -1,23 +1,35 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../data/finance_database.dart';
 import '../models/finance_models.dart';
+import '../services/financial_intelligence_service.dart';
 import '../services/spending_helper.dart';
 
 class FinanceState extends ChangeNotifier {
   final FinanceDatabase db = FinanceDatabase.instance;
+
+  final FinancialIntelligenceService _intelligenceService =
+      const FinancialIntelligenceService();
+
   List<BudgetCategory> categories = [];
   List<MoneyTransaction> transactions = [];
   List<SavingsChallenge> challenges = [];
+
+  FinancialInsights? insights;
+
   double monthlyBudget = 500;
   bool remindersEnabled = false;
   bool loading = true;
   String? error;
+
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
       monthlyBudget = prefs.getDouble('monthly_budget') ?? 500;
       remindersEnabled = prefs.getBool('reminders_enabled') ?? false;
+
       await reload();
     } catch (e) {
       error = '$e';
@@ -30,9 +42,21 @@ class FinanceState extends ChangeNotifier {
     categories = await db.categories();
     transactions = await db.transactions();
     challenges = await db.challenges();
+
+    _refreshInsights();
+
     loading = false;
     error = null;
+
     notifyListeners();
+  }
+
+  void _refreshInsights() {
+    insights = _intelligenceService.analyze(
+      transactions: transactions,
+      monthlyBudget: monthlyBudget,
+      now: DateTime.now(),
+    );
   }
 
   Future<void> _perform(Future<void> Function() operation) async {
@@ -48,37 +72,64 @@ class FinanceState extends ChangeNotifier {
 
   Future<void> saveCategory(BudgetCategory c) =>
       _perform(() => db.saveCategory(c));
+
   Future<void> deleteCategory(int id) => _perform(() => db.deleteCategory(id));
+
   Future<void> saveTransaction(MoneyTransaction t) =>
       _perform(() => db.saveTransaction(t));
+
   Future<void> deleteTransaction(int id) =>
       _perform(() => db.deleteTransaction(id));
+
   Future<void> saveChallenge(SavingsChallenge c) =>
       _perform(() => db.saveChallenge(c));
+
   Future<void> deleteChallenge(int id) =>
       _perform(() => db.deleteChallenge(id));
+
   Future<void> clearAll() => _perform(db.clearAll);
+
   Future<void> setBudget(double value) async {
     monthlyBudget = value;
+
+    _refreshInsights();
     notifyListeners();
+
     await (await SharedPreferences.getInstance())
         .setDouble('monthly_budget', value);
   }
 
   Future<void> setReminders(bool value) async {
     remindersEnabled = value;
+
     notifyListeners();
+
     await (await SharedPreferences.getInstance())
         .setBool('reminders_enabled', value);
   }
 
-  double get spent => SpendingHelper.expenses(transactions, DateTime.now());
+  double get spent => SpendingHelper.expenses(
+        transactions,
+        DateTime.now(),
+      );
+
   double get remaining => monthlyBudget - spent;
+
   String get tip => SpendingHelper.advice(spent: spent, limit: monthlyBudget);
+
+  MonthlySpendingForecast? get spendingForecast => insights?.forecast;
+
+  List<SpendingAnomaly> get spendingAnomalies => insights?.anomalies ?? [];
+
+  List<CategorySpendingTrend> get categoryTrends => insights?.trends ?? [];
+
   String categoryName(int id) {
-    for (final c in categories) {
-      if (c.id == id) return c.name;
+    for (final category in categories) {
+      if (category.id == id) {
+        return category.name;
+      }
     }
+
     return 'Unknown';
   }
 }
