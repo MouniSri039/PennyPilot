@@ -229,3 +229,10 @@ Potential improvements include:
 **PennyPilot — Offline Budgeting & Savings Companion**
 
 Developed by Team PennyPilot as a graduate-level software development project.
+
+## Project One Submission Evidence
+
+- ClickUp board: https://app.clickup.com/90141780871/v/b/2kydwuw7-354
+- Kanban contribution evidence: [Kanban_Contribution_Evidence.pdf](docs/final-submission/Kanban_Contribution_Evidence.pdf)
+- Final presentation and supporting documents: [Final Submission](docs/final-submission/)
+- YouTube presentation: https://youtu.be/P4JknApdLdA
