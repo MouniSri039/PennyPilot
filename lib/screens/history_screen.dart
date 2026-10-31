@@ -111,8 +111,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 showTitles: true,
                                 getTitlesWidget: (value, meta) {
                                   final i = value.toInt();
-                                  if (i < 0 || i >= entries.length)
+                                  if (i < 0 || i >= entries.length) {
                                     return const SizedBox.shrink();
+                                  }
                                   return Padding(
                                       padding: const EdgeInsets.only(top: 6),
                                       child: Text(
