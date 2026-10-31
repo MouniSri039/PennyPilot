@@ -7,7 +7,10 @@ import '../services/financial_intelligence_service.dart';
 import '../services/spending_helper.dart';
 
 class FinanceState extends ChangeNotifier {
-  final FinanceDatabase db = FinanceDatabase.instance;
+  FinanceState({FinanceDatabase? database})
+      : db = database ?? FinanceDatabase.instance;
+
+  final FinanceDatabase db;
 
   final FinancialIntelligenceService _intelligenceService =
       const FinancialIntelligenceService();
@@ -62,7 +65,6 @@ class FinanceState extends ChangeNotifier {
     _refreshInsights(now);
 
     await _saveCurrentForecastSnapshot(now);
-
     await _refreshForecastAccuracy(now);
 
     loading = false;
