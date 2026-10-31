@@ -40,9 +40,11 @@ class FinancialIntelligenceService {
   }) {
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
 
-    final monthExpenses = expenses.where((transaction) =>
-        transaction.date.year == now.year &&
-        transaction.date.month == now.month);
+    final monthExpenses = expenses.where(
+      (transaction) =>
+          transaction.date.year == now.year &&
+          transaction.date.month == now.month,
+    );
 
     final spent = monthExpenses.fold<double>(
       0,
@@ -104,11 +106,18 @@ class FinancialIntelligenceService {
             ].reduce((a, b) => a > b ? a : b);
 
         if (transaction.amount > threshold) {
+          final amountAboveMedian = transaction.amount - baseline;
+
           anomalies.add(
             SpendingAnomaly(
               transaction: transaction,
               historicalMedian: baseline,
               detectionThreshold: threshold,
+              historicalSampleSize: history.length,
+              amountAboveMedian: amountAboveMedian,
+              percentageAboveMedian:
+                  baseline > 0 ? (amountAboveMedian / baseline) * 100 : null,
+              thresholdExcess: transaction.amount - threshold,
               explanation:
                   'This expense is ${transaction.amount.toStringAsFixed(2)}, '
                   'above the category threshold of '
@@ -355,12 +364,20 @@ class SpendingAnomaly {
   final MoneyTransaction transaction;
   final double historicalMedian;
   final double detectionThreshold;
+  final int historicalSampleSize;
+  final double amountAboveMedian;
+  final double? percentageAboveMedian;
+  final double thresholdExcess;
   final String explanation;
 
   const SpendingAnomaly({
     required this.transaction,
     required this.historicalMedian,
     required this.detectionThreshold,
+    required this.historicalSampleSize,
+    required this.amountAboveMedian,
+    required this.percentageAboveMedian,
+    required this.thresholdExcess,
     required this.explanation,
   });
 }

@@ -129,10 +129,7 @@ class FinancialInsightsScreen extends StatelessWidget {
                 ),
               ),
             ),
-
             const SizedBox(height: 24),
-
-            // Historical Forecast Accuracy
             _sectionTitle('Historical Forecast Accuracy'),
             const SizedBox(height: 6),
             Text(
@@ -141,7 +138,6 @@ class FinancialInsightsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _forecastAccuracyCard(accuracy),
-
             const SizedBox(height: 24),
             _sectionTitle('Spending Recommendations'),
             const SizedBox(height: 10),
@@ -166,12 +162,18 @@ class FinancialInsightsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             _sectionTitle('Unusual Spending Alerts'),
+            const SizedBox(height: 6),
+            Text(
+              'Transactions that differ significantly from your '
+              'historical category spending.',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
             const SizedBox(height: 10),
             if (anomalies.isEmpty)
               _emptyCard(
                 Icons.verified_outlined,
                 'No unusual transactions detected',
-                'As you record more expenses, this section will identify '
+                'As you record more expenses, PennyPilot will identify '
                     'transactions that are unusually high compared with '
                     'your previous spending in the same category.',
               )
@@ -183,7 +185,9 @@ class FinancialInsightsScreen extends StatelessWidget {
                     : transaction.description;
 
                 return Card(
-                  child: ListTile(
+                  clipBehavior: Clip.antiAlias,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ExpansionTile(
                     leading: const CircleAvatar(
                       backgroundColor: Color(0xFFFFF0E0),
                       child: Icon(
@@ -193,24 +197,122 @@ class FinancialInsightsScreen extends StatelessWidget {
                     ),
                     title: Text(
                       description,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     subtitle: Padding(
                       padding: const EdgeInsets.only(top: 5),
                       child: Text(
-                        '${state.categoryName(transaction.categoryId)}\n'
-                        '${anomaly.explanation}',
-                        style: const TextStyle(height: 1.4),
+                        '${state.categoryName(transaction.categoryId)}'
+                        ' • ${transaction.date.day}/'
+                        '${transaction.date.month}/'
+                        '${transaction.date.year}',
                       ),
                     ),
-                    isThreeLine: true,
-                    trailing: Text(
-                      money(transaction.amount),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: red,
-                      ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          money(transaction.amount),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: red,
+                          ),
+                        ),
+                        const Text(
+                          'Unusual',
+                          style: TextStyle(
+                            color: red,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: teal.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          anomaly.explanation,
+                          style: const TextStyle(height: 1.4),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Why was this flagged?',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _detailRow(
+                        'Transaction amount',
+                        money(transaction.amount),
+                      ),
+                      _detailRow(
+                        'Historical median',
+                        money(anomaly.historicalMedian),
+                      ),
+                      _detailRow(
+                        'Previous transactions analyzed',
+                        '${anomaly.historicalSampleSize}',
+                      ),
+                      _detailRow(
+                        'Amount above median',
+                        money(anomaly.amountAboveMedian),
+                      ),
+                      _detailRow(
+                        'Above historical median',
+                        anomaly.percentageAboveMedian == null
+                            ? 'Not available (zero baseline)'
+                            : '${anomaly.percentageAboveMedian!.toStringAsFixed(1)}%',
+                      ),
+                      _detailRow(
+                        'Detection threshold',
+                        money(anomaly.detectionThreshold),
+                      ),
+                      _detailRow(
+                        'Above detection threshold',
+                        money(anomaly.thresholdExcess),
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(),
+                      const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: teal,
+                            size: 19,
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'This is a statistical spending alert, '
+                              'not a judgment about the transaction. '
+                              'Review it to decide whether it was expected.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 );
               }),
@@ -263,6 +365,7 @@ class FinancialInsightsScreen extends StatelessWidget {
                                   reservedSize: 42,
                                   getTitlesWidget: (value, meta) {
                                     final index = value.toInt();
+
                                     if (index < 0 || index >= trends.length) {
                                       return const SizedBox.shrink();
                                     }
@@ -463,6 +566,31 @@ class FinancialInsightsScreen extends StatelessWidget {
     );
   }
 
+  static Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.black54),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   static Widget _sectionTitle(String title) {
     return Text(
       title,
@@ -566,6 +694,7 @@ class FinancialInsightsScreen extends StatelessWidget {
       if (trend.currentMonthTotal > maximum) {
         maximum = trend.currentMonthTotal;
       }
+
       if (trend.previousMonthTotal > maximum) {
         maximum = trend.previousMonthTotal;
       }
@@ -579,7 +708,10 @@ class _Legend extends StatelessWidget {
   final Color color;
   final String label;
 
-  const _Legend({required this.color, required this.label});
+  const _Legend({
+    required this.color,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -595,7 +727,10 @@ class _Legend extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 12)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12),
+        ),
       ],
     );
   }

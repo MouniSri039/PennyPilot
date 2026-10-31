@@ -1,3 +1,4 @@
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pennypilot/models/finance_models.dart';
 import 'package:pennypilot/services/financial_intelligence_service.dart';
@@ -266,6 +267,133 @@ void main() {
 
       expect(result.anomalies, isEmpty);
     });
+
+    test('provides explainability metrics for a detected anomaly', () {
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 10,
+          date: DateTime(2026, 10, 1),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 12,
+          date: DateTime(2026, 10, 2),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 11,
+          date: DateTime(2026, 10, 3),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 13,
+          date: DateTime(2026, 10, 4),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 100,
+          date: DateTime(2026, 10, 5),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 10, 31),
+      );
+
+      final anomaly = result.anomalies.single;
+
+      expect(anomaly.historicalSampleSize, 4);
+      expect(anomaly.historicalMedian, 11.5);
+      expect(anomaly.amountAboveMedian, 88.5);
+      expect(
+        anomaly.percentageAboveMedian,
+        closeTo((88.5 / 11.5) * 100, 0.001),
+      );
+      expect(
+        anomaly.thresholdExcess,
+        closeTo(100 - anomaly.detectionThreshold, 0.001),
+      );
+    });
+
+    test('handles zero historical median without division by zero', () {
+      final transactions = [
+        expense(
+          categoryId: 1,
+          amount: 0,
+          date: DateTime(2026, 10, 1),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 0,
+          date: DateTime(2026, 10, 2),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 0,
+          date: DateTime(2026, 10, 3),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 0,
+          date: DateTime(2026, 10, 4),
+        ),
+        expense(
+          categoryId: 1,
+          amount: 50,
+          date: DateTime(2026, 10, 5),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 500,
+        now: DateTime(2026, 10, 31),
+      );
+
+      final anomaly = result.anomalies.single;
+
+      expect(anomaly.historicalMedian, 0);
+      expect(anomaly.historicalSampleSize, 4);
+      expect(anomaly.amountAboveMedian, 50);
+      expect(anomaly.percentageAboveMedian, isNull);
+      expect(anomaly.thresholdExcess, 49);
+    });
+
+    test('maintains independent historical baselines by category', () {
+      final transactions = [
+        for (var i = 1; i <= 4; i++)
+          expense(
+            categoryId: 1,
+            amount: 10,
+            date: DateTime(2026, 10, i),
+          ),
+        for (var i = 1; i <= 4; i++)
+          expense(
+            categoryId: 2,
+            amount: 100,
+            date: DateTime(2026, 10, i),
+          ),
+        expense(
+          categoryId: 1,
+          amount: 100,
+          date: DateTime(2026, 10, 5),
+        ),
+      ];
+
+      final result = service.analyze(
+        transactions: transactions,
+        monthlyBudget: 1000,
+        now: DateTime(2026, 10, 31),
+      );
+
+      expect(result.anomalies, hasLength(1));
+      expect(result.anomalies.single.transaction.categoryId, 1);
+      expect(result.anomalies.single.historicalMedian, 10);
+      expect(result.anomalies.single.historicalSampleSize, 4);
+    });
   });
 
   group('Category spending trends', () {
@@ -411,30 +539,27 @@ void main() {
       expect(report.meanAbsoluteError, isNull);
     });
 
-    test(
-      'excludes zero actual spending from MAPE but includes it in MAE',
-      () {
-        final report = evaluator.evaluate(
-          snapshots: [
-            snapshot(year: 2026, month: 8, day: 10, predicted: 100),
-            snapshot(year: 2026, month: 9, day: 10, predicted: 200),
-          ],
-          transactions: [
-            expense(
-              categoryId: 1,
-              amount: 100,
-              date: DateTime(2026, 9, 15),
-            ),
-          ],
-          now: DateTime(2026, 10, 5),
-        );
+    test('excludes zero actual spending from MAPE but includes it in MAE', () {
+      final report = evaluator.evaluate(
+        snapshots: [
+          snapshot(year: 2026, month: 8, day: 10, predicted: 100),
+          snapshot(year: 2026, month: 9, day: 10, predicted: 200),
+        ],
+        transactions: [
+          expense(
+            categoryId: 1,
+            amount: 100,
+            date: DateTime(2026, 9, 15),
+          ),
+        ],
+        now: DateTime(2026, 10, 5),
+      );
 
-        expect(report.evaluatedForecastCount, 2);
-        expect(report.meanAbsoluteError, 100);
-        expect(report.meanAbsolutePercentageError, 100);
-        expect(report.zeroActualCount, 1);
-      },
-    );
+      expect(report.evaluatedForecastCount, 2);
+      expect(report.meanAbsoluteError, 100);
+      expect(report.meanAbsolutePercentageError, 100);
+      expect(report.zeroActualCount, 1);
+    });
 
     test('returns null MAPE when all actual totals are zero', () {
       final report = evaluator.evaluate(
